@@ -1,9 +1,7 @@
 # this is simple pygame this is made by me and i am not a part of making pygame and this is a module
-
 import pygame
 
 class MainLoader:
-    # you need this to load the game and create a window
     def __init__(self, screen_width=640, screen_height=480, name="Simple Pygame", fullscreen=False, resizable=False):
         pygame.init()
         if fullscreen:
@@ -15,18 +13,26 @@ class MainLoader:
         self.clock = pygame.time.Clock()
         pygame.display.set_caption(name)
         self.running = True
-        self.mouse_clicked = None 
+        self.mouse_clicked = None
+        self.key_clicked = None  # Add this line
+        self.scene_manager = SceneManager(self)
 
     def poll_events(self):
-        self.mouse_clicked = None  
+        self.mouse_clicked = None
+        self.key_clicked = None  # Add this line
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self.running = False
+                self.key_clicked = event.key  # Add this line
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.mouse_clicked = event.button
+
+            if self.scene_manager.current_scene is not None:
+                self.scene_manager.handle_event(event)
+
+    def was_key_clicked(self, key):
+        return self.key_clicked == key
 
     def get_mouse_pos(self):
         return pygame.mouse.get_pos()
@@ -50,8 +56,93 @@ class MainLoader:
         keys = pygame.key.get_pressed()
         return keys[key]
 
+    def create_font(self, path=None, size=32):
+        return pygame.font.Font(path, size)
+
+    def draw_text(self, text, x, y, font=None, color=(255, 255, 255), center=False):
+        if font is None:
+            font = pygame.font.Font(None, 32)
+        rendered = font.render(str(text), True, color)
+        rect = rendered.get_rect()
+        if center:
+            rect.center = (x, y)
+        else:
+            rect.topleft = (x, y)
+        self.screen.blit(rendered, rect)
+        return rect
+
     def quit(self):
         pygame.quit()
+
+    def add_scene(self, name, scene):
+        return self.scene_manager.add_scene(name, scene)
+
+    def set_scene(self, name):
+        self.scene_manager.set_scene(name)
+
+    def change_scene(self, name):
+        self.scene_manager.set_scene(name)
+
+class Scene:
+    # for scenes of classes
+    def __init__(self, game, enter=None, exit=None, handle_event=None, update=None, draw=None):
+        self.game = game
+        self._enter = enter
+        self._exit = exit
+        self._handle_event = handle_event
+        self._update = update
+        self._draw = draw
+
+    def enter(self):
+        if callable(self._enter):
+            return self._enter()
+
+    def exit(self):
+        if callable(self._exit):
+            return self._exit()
+
+    def handle_event(self, event):
+        if callable(self._handle_event):
+            return self._handle_event(event)
+
+    def update(self):
+        if callable(self._update):
+            return self._update()
+
+    def draw(self):
+        if callable(self._draw):
+            return self._draw()
+
+class SceneManager:
+    # a scene manager for scenes
+    def __init__(self, game):
+        self.game = game
+        self.scenes = {}
+        self.current_scene = None
+
+    def add_scene(self, name, scene):
+        self.scenes[name] = scene
+        return scene
+
+    def set_scene(self, name):
+        if name not in self.scenes:
+            raise KeyError(f"Scene '{name}' not found")
+        if self.current_scene is not None:
+            self.current_scene.exit()
+        self.current_scene = self.scenes[name]
+        self.current_scene.enter()
+
+    def handle_event(self, event):
+        if self.current_scene is not None:
+            self.current_scene.handle_event(event)
+
+    def update(self):
+        if self.current_scene is not None:
+            self.current_scene.update()
+
+    def draw(self):
+        if self.current_scene is not None:
+            self.current_scene.draw()
 
 class PhysicsObject:
     # physics on pygame :O
@@ -232,6 +323,48 @@ class Camera:
     def apply_rect(self, obj):
         return pygame.Rect(obj.x - self.x, obj.y - self.y, obj.width, obj.height)
     
+class Button:
+    def __init__(self, x, y, width, height, text, font=None, color=(100, 100, 100), text_color=(255, 255, 255)):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = str(text)
+        self.font = font if font is not None else pygame.font.Font(None, 32)
+        self.color = color
+        self.text_color = text_color
+        self.hover_color = tuple(min(255, c + 50) for c in color)
+        self.border_color = (0, 0, 0)
+
+    def draw(self, screen):
+        current_color = self.hover_color if self.rect.collidepoint(pygame.mouse.get_pos()) else self.color
+        pygame.draw.rect(screen, current_color, self.rect)
+        pygame.draw.rect(screen, self.border_color, self.rect, 2)
+        text_surface = self.font.render(self.text, True, self.text_color)
+        text_rect = text_surface.get_rect(center=self.rect.center)
+        screen.blit(text_surface, text_rect)
+
+    def is_hovered(self):
+        return self.rect.collidepoint(pygame.mouse.get_pos())
+
+    def is_clicked(self, game):
+        return game.was_mouse_clicked(Mouse.LEFT) and self.is_hovered()
+
+class Label:
+    def __init__(self, x, y, text, font=None, color=(255, 255, 255), center=False):
+        self.x = x
+        self.y = y
+        self.text = str(text)
+        self.font = font if font is not None else pygame.font.Font(None, 32)
+        self.color = color
+        self.center = center
+
+    def draw(self, screen):
+        text_surface = self.font.render(self.text, True, self.color)
+        text_rect = text_surface.get_rect()
+        if self.center:
+            text_rect.center = (self.x, self.y)
+        else:
+            text_rect.topleft = (self.x, self.y)
+        screen.blit(text_surface, text_rect)
+
 class Keys:
     A = pygame.K_a
     B = pygame.K_b
